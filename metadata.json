@@ -1,0 +1,7 @@
+{
+  "name": "Credit Assistant - AI Financial Health Advisor",
+  "description": "AI-powered credit health platform tailored for the Indian financial ecosystem with CIBIL score tracking, debt analysis, roadmap generator, and Shubham Vasu AI Credit Bot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
