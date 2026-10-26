@@ -1,14 +1,14 @@
 {
-  "name": "react-example",
+  "name": "ai-financial-health-advisor",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "tsx server.ts",
     "build": "vite build",
+    "start": "tsx server.ts --production",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -37,5 +37,9 @@
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
     "@types/express": "^4.17.21"
+  },
+  "description": "AI-powered credit health advisor for the Indian market: CIBIL tracking, debt analysis, what-if simulator, loan offers and a Gemini-powered advisor chat.",
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -4,8 +4,12 @@ import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { CreditCard, ActiveLoan, ScoreHistoryEntry, Bottleneck, UserProfile } from './src/types.ts';
 
-dotenv.config();
+export type { CreditCard, ActiveLoan, ScoreHistoryEntry, Bottleneck, UserProfile };
+
+// Load secrets from .env.local first, then .env
+dotenv.config({ path: ['.env.local', '.env'] });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,103 +19,18 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Initialize Google GenAI Server-side
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || '',
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+// Initialize Google GenAI server-side (the API key never reaches the browser)
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const hasApiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
-export interface CreditCard {
-  id: string;
-  bankName: string;
-  cardName: string;
-  creditLimit: number;
-  currentBalance: number;
-  dueDate: string;
-  aprPercent: number;
-}
-
-export interface ActiveLoan {
-  id: string;
-  lenderName: string;
-  loanType: 'Personal Loan' | 'Home Loan' | 'Auto Loan' | 'Gold Loan' | 'Consumer Durable Loan' | 'Education Loan';
-  isSecured: boolean;
-  principalRemaining: number;
-  monthlyEMI: number;
-  interestRate: number;
-  tenureMonthsRemaining: number;
-}
-
-export interface ScoreHistoryEntry {
-  date: string;
-  monthLabel: string;
-  score: number;
-  event?: string;
-  utilization: number;
-  dti: number;
-}
-
-export interface Bottleneck {
-  id: string;
-  severity: 'critical' | 'warning' | 'info';
-  title: string;
-  description: string;
-  currentValue: string;
-  recommendedValue: string;
-  impact: string;
-}
-
-export interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  occupation: string;
-  monthlyIncome: number;
-  monthlyExpenses: number;
-  cibilScore: number;
-  scoreCategory: 'Poor' | 'Fair' | 'Good' | 'Excellent';
-  creditCards: CreditCard[];
-  activeLoans: ActiveLoan[];
-  missedPaymentsLast24Months: number;
-  hardInquiriesLast6Months: number;
-  creditAgeYears: number;
-  calculatedMetrics: {
-    totalCreditLimit: number;
-    totalCreditCardDebt: number;
-    totalLoanDebt: number;
-    totalTotalDebt: number;
-    totalMonthlyEMI: number;
-    creditUtilizationRatio: number;
-    dtiRatio: number; // FOIR %
-    discretionarySavings: number;
-    securedDebt: number;
-    unsecuredDebt: number;
-    securedRatio: number;
-    bottlenecks: Bottleneck[];
-  };
-  scoreHistory: ScoreHistoryEntry[];
-  aiRoadmap?: {
-    lastGeneratedAt: string;
-    summary: string;
-    cibilHealthGrade: string;
-    bottleneckSummary: string;
-    projectedScoreIn6Months: number;
-    steps: Array<{
-      stepNumber: number;
-      title: string;
-      description: string;
-      category: 'Utilization' | 'Repayment' | 'Credit Mix' | 'DTI / FOIR' | 'Dispute / Bureau';
-      potentialScoreImpact: number;
-      timeframe: string;
-      isCompleted?: boolean;
-    }>;
-    indianBankingAdvice: string;
-  };
+/** Returns true (and answers 503) when no Gemini key is configured. */
+function aiUnavailable(res: Response): boolean {
+  if (hasApiKey) return false;
+  res.status(503).json({
+    error: 'GEMINI_API_KEY is not configured. Add it to .env.local and restart the server.',
+  });
+  return true;
 }
 
 // Helper calculation engine for Indian banking standards
@@ -832,6 +751,12 @@ app.post('/api/profiles/:id/pay-debt', (req: Request, res: Response) => {
 
     const { type, itemId, amountPaid, closeAccount } = req.body;
     const payment = Number(amountPaid) || 0;
+    if (type !== 'card' && type !== 'loan') {
+      return res.status(400).json({ error: "type must be 'card' or 'loan'" });
+    }
+    if (payment <= 0 && !closeAccount) {
+      return res.status(400).json({ error: 'amountPaid must be greater than 0' });
+    }
     let oldScore = profile.cibilScore;
     let eventDescription = '';
 
@@ -929,6 +854,7 @@ app.put('/api/profiles/:id', (req: Request, res: Response) => {
 
 // Scenario 2: AI-Powered Financial Consultation with Gemini AI
 app.post('/api/advisor/analyze', async (req: Request, res: Response) => {
+  if (aiUnavailable(res)) return;
   try {
     const { profileId } = req.body;
     const profile = dbProfiles.find((p) => p.id === profileId);
@@ -961,7 +887,7 @@ Provide:
 4. Concrete advice on navigating Indian banks (HDFC, SBI, ICICI) and credit bureau guidelines.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         systemInstruction: `You are Shubham Vasu, an authoritative Indian credit rating and personal finance specialist.
@@ -1053,6 +979,7 @@ Ensure your advice reflects Indian banking reality: mentions ₹ INR, CIBIL scor
 
 // Interactive Shubham Vasu AI Credit Bot
 app.post('/api/advisor/chat', async (req: Request, res: Response) => {
+  if (aiUnavailable(res)) return;
   try {
     const { message, profileId, chatHistory } = req.body;
     const profile = dbProfiles.find((p) => p.id === profileId);
@@ -1096,7 +1023,7 @@ Rules:
     });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: GEMINI_MODEL,
       contents: formattedContents,
       config: {
         systemInstruction: systemPrompt,
@@ -1187,7 +1114,8 @@ app.post('/api/advisor/simulate', async (req: Request, res: Response) => {
 
 // Setup Vite middleware in dev or static serving in prod
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--production');
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -1201,7 +1129,7 @@ async function startServer() {
   }
 
   app.listen(PORT, () => {
-    console.log(`Credit Assistant server running on port ${PORT}`);
+    console.log(`Credit Assistant server running on http://localhost:${PORT}${hasApiKey ? '' : ' (AI features disabled: GEMINI_API_KEY missing)'}`);
   });
 }
 
